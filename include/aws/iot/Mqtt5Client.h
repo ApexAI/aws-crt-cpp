@@ -279,6 +279,15 @@ namespace Aws
             Mqtt5ClientBuilder &WithBootstrap(Crt::Io::ClientBootstrap *bootStrap) noexcept;
 
             /**
+              * Sets the aws socket options
+              *
+              * @param socketOptions  Io::SocketOptions used to setup socket
+              *
+              * @return this option object
+             */
+            Mqtt5ClientBuilder &WithSocketOptions(Crt::Io::SocketOptions socketOptions) noexcept;
+
+            /**
              * Sets the certificate authority for the endpoint you're connecting to. This is a path to a file on disk
              * and must be in PEM format.
              *
