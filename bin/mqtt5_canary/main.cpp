@@ -9,6 +9,7 @@
 #include <aws/crt/crypto/Hash.h>
 #include <aws/crt/http/HttpConnection.h>
 #include <aws/crt/http/HttpRequestResponse.h>
+#include <aws/crt/io/Socks5ProxyOptions.h>
 #include <aws/crt/io/TlsOptions.h>
 #include <aws/crt/io/Uri.h>
 
@@ -47,7 +48,49 @@ struct AppCtx
 
     const char *TraceFile;
     Aws::Crt::LogLevel LogLevel;
+
+    Aws::Crt::String proxy_host;
+    uint16_t proxy_port;
+    bool use_proxy = false;
+    Aws::Crt::Optional<Io::Socks5ProxyOptions> socks5_proxy_options;
 };
+
+static bool s_parse_proxy_uri(AppCtx &ctx, const char *proxy_arg) {
+    if (!proxy_arg || proxy_arg[0] == '\0') {
+        std::cerr << "Proxy URI must not be empty" << std::endl;
+        return false;
+    }
+
+    ByteCursor uri_cursor = aws_byte_cursor_from_c_str(proxy_arg);
+    Io::Uri parsed_uri(uri_cursor, ctx.allocator);
+    if (!parsed_uri) {
+        std::cerr << "Failed to parse proxy URI \"" << proxy_arg << "\": "
+                  << aws_error_debug_str(parsed_uri.LastError()) << std::endl;
+        return false;
+    }
+
+    auto proxyOptions =
+        Io::Socks5ProxyOptions::CreateFromUri(parsed_uri, ctx.connect_timeout, ctx.allocator);
+    if (!proxyOptions) {
+        std::cerr << "Failed to create SOCKS5 proxy options from \"" << proxy_arg << "\": "
+                  << aws_error_debug_str(Aws::Crt::LastError()) << std::endl;
+        return false;
+    }
+
+    ctx.socks5_proxy_options = *proxyOptions;
+
+    ByteCursor host_cursor = parsed_uri.GetHostName();
+    ctx.proxy_host.assign(reinterpret_cast<const char *>(host_cursor.ptr), host_cursor.len);
+
+    uint32_t port = parsed_uri.GetPort();
+    if (port == 0) {
+        port = 1080;
+    }
+    ctx.proxy_port = static_cast<uint16_t>(port);
+
+    ctx.use_proxy = true;
+    return true;
+}
 
 enum AwsMqtt5CanaryOperations
 {
@@ -92,7 +135,8 @@ static void s_Usage(int exit_code)
     fprintf(stderr, "  -l, --log FILE: dumps logs to FILE instead of stderr.\n");
     fprintf(stderr, "  -v, --verbose: ERROR|INFO|DEBUG|TRACE: log level to configure. Default is none.\n");
     fprintf(stderr, "  -w, --websockets: use mqtt-over-websockets rather than direct mqtt\n");
-    fprintf(stderr, "  -u, --tls: use tls with mqtt connection\n");
+    fprintf(stderr,
+            "      --proxy URL: SOCKS5 proxy URI (socks5h://[user[:pass]@]host[:port]).\n");
 
     fprintf(stderr, "  -t, --threads: number of eventloop group threads to use\n");
     fprintf(stderr, "  -C, --clients: number of mqtt5 clients to use\n");
@@ -111,6 +155,7 @@ static struct aws_cli_option s_long_options[] = {
     {"log", AWS_CLI_OPTIONS_REQUIRED_ARGUMENT, NULL, 'l'},
     {"verbose", AWS_CLI_OPTIONS_REQUIRED_ARGUMENT, NULL, 'v'},
     {"websockets", AWS_CLI_OPTIONS_NO_ARGUMENT, NULL, 'w'},
+    {"proxy", AWS_CLI_OPTIONS_REQUIRED_ARGUMENT, NULL, 'X'},
     {"help", AWS_CLI_OPTIONS_NO_ARGUMENT, NULL, 'h'},
 
     {"threads", AWS_CLI_OPTIONS_REQUIRED_ARGUMENT, NULL, 't'},
@@ -123,11 +168,10 @@ static struct aws_cli_option s_long_options[] = {
 
 static void s_ParseOptions(int argc, char **argv, struct AppCtx &ctx, struct AwsMqtt5CanaryTesterOptions *testerOptions)
 {
-
     while (true)
     {
         int option_index = 0;
-        int c = aws_cli_getopt_long(argc, argv, "a:c:e:f:l:v:wht:C:T:s:", s_long_options, &option_index);
+        int c = aws_cli_getopt_long(argc, argv, "a:c:e:f:l:v:wht:C:T:s:X:", s_long_options, &option_index);
         if (c == -1)
         {
             /* finished parsing */
@@ -159,9 +203,6 @@ static void s_ParseOptions(int argc, char **argv, struct AppCtx &ctx, struct Aws
                 break;
             case 'w':
                 ctx.use_websockets = true;
-                break;
-            case 'u':
-                ctx.use_tls = true;
                 break;
             case 't':
                 testerOptions->elgMaxThreads = (uint16_t)atoi(aws_cli_optarg);
@@ -201,6 +242,11 @@ static void s_ParseOptions(int argc, char **argv, struct AppCtx &ctx, struct Aws
                 break;
             case 's':
                 testerOptions->testRunSeconds = atoi(aws_cli_optarg);
+                break;
+            case 'X':
+                if (!s_parse_proxy_uri(ctx, aws_cli_optarg)) {
+                    s_Usage(1);
+                }
                 break;
             case 0x02:
                 /* getopt_long() returns 0x02 (START_OF_TEXT) if a positional arg was encountered */
@@ -897,6 +943,22 @@ int main(int argc, char **argv)
         if (appCtx.use_tls)
         {
             mqtt5Options.WithTlsConnectionOptions(tlsConnectionOptions);
+        }
+
+        if (appCtx.use_proxy && appCtx.socks5_proxy_options && !appCtx.proxy_host.empty())
+        {
+            AWS_LOGF_INFO(AWS_LS_MQTT5_CANARY, "MQTT5: Using SOCKS5 proxy %s:%d", appCtx.proxy_host.c_str(), appCtx.proxy_port);
+            const auto &proxy_opts = *appCtx.socks5_proxy_options;
+            Aws::Crt::String username, password;
+            if (proxy_opts.GetUsername().has_value()) {
+                username = proxy_opts.GetUsername().value();
+                AWS_LOGF_INFO(AWS_LS_MQTT5_CANARY, "MQTT5: Proxy username: %s", username.c_str());
+            }
+            if (proxy_opts.GetPassword().has_value()) {
+                password = proxy_opts.GetPassword().value();
+                AWS_LOGF_INFO(AWS_LS_MQTT5_CANARY, "MQTT5: Proxy password: %s", password.c_str());
+            }
+            mqtt5Options.WithSocks5ProxyOptions(proxy_opts);
         }
 
         if (appCtx.use_websockets)

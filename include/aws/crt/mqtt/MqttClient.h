@@ -9,6 +9,7 @@
 #include <aws/crt/http/HttpConnection.h>
 #include <aws/crt/io/SocketOptions.h>
 #include <aws/crt/io/TlsOptions.h>
+#include <aws/crt/io/Socks5ProxyOptions.h>
 #include <aws/crt/mqtt/MqttConnection.h>
 
 #include <aws/mqtt/client.h>

@@ -11,6 +11,7 @@
 #include <aws/crt/io/Bootstrap.h>
 #include <aws/crt/io/SocketOptions.h>
 #include <aws/crt/io/TlsOptions.h>
+#include <aws/crt/io/Socks5ProxyOptions.h>
 
 #include <functional>
 #include <memory>
@@ -410,6 +411,12 @@ namespace Aws
                  * Optional.
                  */
                 Optional<HttpClientConnectionProxyOptions> ProxyOptions;
+
+                /**
+                 * The SOCKS5 proxy options for the http connection.
+                 * Optional.
+                 */
+                Optional<Io::Socks5ProxyOptions> Socks5ProxyOptions;
 
                 /**
                  * If set to true, then the TCP read back pressure mechanism will be enabled. You should

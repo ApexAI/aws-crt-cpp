@@ -188,6 +188,8 @@ namespace Aws
                 AWS_ZERO_STRUCT(m_packetConnectViewStorage);
                 AWS_ZERO_STRUCT(m_httpProxyOptionsStorage);
 
+                AWS_ZERO_STRUCT(m_socks5ProxyOptionsStorage);
+
                 AWS_ZERO_STRUCT(m_topicAliasingOptions);
             }
 
@@ -217,6 +219,11 @@ namespace Aws
                     raw_options.http_proxy_options = &m_httpProxyOptionsStorage;
                 }
 
+                if (m_socks5ProxyOptions.has_value())
+                {
+                    raw_options.socks5_proxy_options = m_socks5ProxyOptions->GetUnderlyingHandle();
+                }
+
                 raw_options.connect_options = &m_packetConnectViewStorage;
                 raw_options.session_behavior = m_sessionBehavior;
                 raw_options.extended_validation_and_flow_control_options = m_extendedValidationAndFlowControlOptions;
@@ -232,6 +239,11 @@ namespace Aws
                 raw_options.topic_aliasing_options = &m_topicAliasingOptions;
 
                 return true;
+            }
+            Mqtt5ClientOptions &Mqtt5ClientOptions::WithSocks5ProxyOptions(const Crt::Io::Socks5ProxyOptions &proxyOptions) noexcept
+            {
+                m_socks5ProxyOptions = proxyOptions;
+                return *this;
             }
 
             Mqtt5ClientOptions::~Mqtt5ClientOptions() {}

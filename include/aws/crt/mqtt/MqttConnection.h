@@ -11,6 +11,7 @@
 #include <aws/crt/io/SocketOptions.h>
 #include <aws/crt/io/TlsOptions.h>
 #include <aws/crt/mqtt/MqttTypes.h>
+#include <aws/crt/io/Socks5ProxyOptions.h>
 
 #include <aws/mqtt/client.h>
 #include <aws/mqtt/v5/mqtt5_client.h>
@@ -219,6 +220,12 @@ namespace Aws
                  * @return success/failure
                  */
                 bool SetHttpProxyOptions(const Http::HttpClientConnectionProxyOptions &proxyOptions) noexcept;
+
+                /**
+                 * Sets the SOCKS5 proxy options for this connection.
+                 * This must be called before Connect().
+                 */
+                bool SetSocks5ProxyOptions(const Aws::Crt::Io::Socks5ProxyOptions &options) noexcept;
 
                 /**
                  * Customize time to wait between reconnect attempts.

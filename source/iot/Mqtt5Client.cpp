@@ -357,6 +357,13 @@ namespace Aws
             return *this;
         }
 
+        Mqtt5ClientBuilder &Mqtt5ClientBuilder::WithSocks5ProxyOptions(
+            const Crt::Io::Socks5ProxyOptions &proxyOptions) noexcept
+        {
+            m_socks5ProxyOptions = proxyOptions;
+            return *this;
+        }
+
         Mqtt5ClientBuilder &Mqtt5ClientBuilder::WithCustomAuthorizer(const Iot::Mqtt5CustomAuthConfig &config) noexcept
         {
             m_customAuthConfig = config;
@@ -575,6 +582,11 @@ namespace Aws
             if (m_connectOptions != nullptr)
             {
                 m_options->WithConnectOptions(m_connectOptions);
+            }
+
+            if (m_socks5ProxyOptions.has_value())
+            {
+                m_options->WithSocks5ProxyOptions(m_socks5ProxyOptions.value());
             }
 
             if (m_websocketConfig.has_value())

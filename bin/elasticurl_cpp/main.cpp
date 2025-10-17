@@ -6,6 +6,8 @@
 #include <aws/crt/crypto/Hash.h>
 #include <aws/crt/http/HttpConnection.h>
 #include <aws/crt/http/HttpRequestResponse.h>
+
+#include <aws/crt/io/Socks5ProxyOptions.h>
 #include <aws/crt/io/Uri.h>
 
 #include <aws/common/command_line_parser.h>
@@ -40,11 +42,47 @@ struct ElasticurlCtx
 
     std::shared_ptr<Io::IStream> InputBody = nullptr;
     std::ofstream Output;
+
+    // SOCKS5 proxy support
+    Aws::Crt::String ProxyHost;
+    uint16_t ProxyPort = 0;
+    bool UseProxy = false;
+    Aws::Crt::Optional<Aws::Crt::Io::Socks5ProxyOptions> Socks5ProxyOptions;
 };
+
+// Parse SOCKS5 proxy URI and fill ElasticurlCtx fields
+static bool s_ParseProxyUri(ElasticurlCtx &ctx, const char *proxy_arg) {
+    if (!proxy_arg || proxy_arg[0] == '\0') {
+        std::cerr << "Proxy URI must not be empty" << std::endl;
+        return false;
+    }
+    ByteCursor uri_cursor = aws_byte_cursor_from_c_str(proxy_arg);
+    Io::Uri parsed_uri(uri_cursor, ctx.allocator);
+    if (!parsed_uri) {
+        std::cerr << "Failed to parse proxy URI \"" << proxy_arg << "\": "
+                  << aws_error_debug_str(parsed_uri.LastError()) << std::endl;
+        return false;
+    }
+    auto proxyOptions = Io::Socks5ProxyOptions::CreateFromUri(parsed_uri, ctx.ConnectTimeout, ctx.allocator);
+    if (!proxyOptions) {
+        std::cerr << "Failed to create SOCKS5 proxy options from \"" << proxy_arg << "\": "
+                  << aws_error_debug_str(Aws::Crt::LastError()) << std::endl;
+        return false;
+    }
+    ctx.Socks5ProxyOptions = *proxyOptions;
+    ByteCursor host_cursor = parsed_uri.GetHostName();
+    ctx.ProxyHost.assign(reinterpret_cast<const char *>(host_cursor.ptr), host_cursor.len);
+    uint32_t port = parsed_uri.GetPort();
+    if (port == 0) {
+        port = 1080;
+    }
+    ctx.ProxyPort = static_cast<uint16_t>(port);
+    ctx.UseProxy = true;
+    return true;
+}
 
 static void s_Usage(int exit_code)
 {
-
     std::cerr << "usage: elasticurl [options] url\n";
     std::cerr << " url: url to make a request to. The default is a GET request.\n";
     std::cerr << "\n Options:\n\n";
@@ -65,6 +103,7 @@ static void s_Usage(int exit_code)
     std::cerr << "  -o, --output FILE: dumps content-body to FILE instead of stdout.\n";
     std::cerr << "  -t, --trace FILE: dumps logs to FILE instead of stderr.\n";
     std::cerr << "  -v, --verbose: ERROR|INFO|DEBUG|TRACE: log level to configure. Default is none.\n";
+    std::cerr << "      --proxy URL: SOCKS5 proxy URI (socks5h://[user[:pass]@]host[:port]).\n";
     std::cerr << "      --version: print the version of elasticurl.\n";
     std::cerr << "      --http2: HTTP/2 connection required\n";
     std::cerr << "      --http1_1: HTTP/1.1 connection required\n";
@@ -91,6 +130,7 @@ static struct aws_cli_option s_LongOptions[] = {
     {"output", AWS_CLI_OPTIONS_REQUIRED_ARGUMENT, nullptr, 'o'},
     {"trace", AWS_CLI_OPTIONS_REQUIRED_ARGUMENT, nullptr, 't'},
     {"verbose", AWS_CLI_OPTIONS_REQUIRED_ARGUMENT, nullptr, 'v'},
+    {"proxy", AWS_CLI_OPTIONS_REQUIRED_ARGUMENT, nullptr, 'X'},
     {"version", AWS_CLI_OPTIONS_NO_ARGUMENT, nullptr, 'V'},
     {"http2", AWS_CLI_OPTIONS_NO_ARGUMENT, nullptr, 'w'},
     {"http1_1", AWS_CLI_OPTIONS_NO_ARGUMENT, nullptr, 'W'},
@@ -104,7 +144,7 @@ static void s_ParseOptions(int argc, char **argv, ElasticurlCtx &ctx)
     while (true)
     {
         int option_index = 0;
-        int c = aws_cli_getopt_long(argc, argv, "a:b:c:e:f:H:d:g:M:GPHiko:t:v:VwWh", s_LongOptions, &option_index);
+        int c = aws_cli_getopt_long(argc, argv, "a:b:c:e:f:H:d:g:M:GPHiko:t:v:VwWhX:", s_LongOptions, &option_index);
         if (c == -1)
         {
             /* finished parsing */
@@ -123,6 +163,11 @@ static void s_ParseOptions(int argc, char **argv, ElasticurlCtx &ctx)
                 {
                     std::cerr << "Failed to parse uri \"" << aws_cli_positional_arg << "\" with error "
                               << aws_error_debug_str(ctx.uri.LastError()) << std::endl;
+                    s_Usage(1);
+                }
+                break;
+            case 'X':
+                if (!s_ParseProxyUri(ctx, aws_cli_optarg)) {
                     s_Usage(1);
                 }
                 break;
@@ -418,6 +463,9 @@ int main(int argc, char **argv)
     }
     httpClientConnectionOptions.HostName = String((const char *)hostName.ptr, hostName.len);
     httpClientConnectionOptions.Port = port;
+    if (appCtx.UseProxy && appCtx.Socks5ProxyOptions.has_value()) {
+        httpClientConnectionOptions.Socks5ProxyOptions = appCtx.Socks5ProxyOptions.value();
+    }
 
     Http::HttpClientConnection::CreateConnection(httpClientConnectionOptions, allocator);
 

@@ -590,6 +590,20 @@ namespace Aws
                 return true;
             }
 
+            bool MqttConnectionCore::SetSocks5ProxyOptions(const Io::Socks5ProxyOptions &proxyOptions) noexcept
+            {
+                Io::Socks5ProxyOptions optionsCopy(proxyOptions);
+
+                if (aws_mqtt_client_connection_set_socks5_proxy_options(
+                        m_underlyingConnection, optionsCopy.GetUnderlyingHandle()) != AWS_OP_SUCCESS)
+                {
+                    return false;
+                }
+
+                m_socks5ProxyOptions = optionsCopy;
+                return true;
+            }
+
             bool MqttConnectionCore::SetReconnectTimeout(uint64_t min_seconds, uint64_t max_seconds) noexcept
             {
                 return aws_mqtt_client_connection_set_reconnect_timeout(
@@ -650,6 +664,15 @@ namespace Aws
                     m_proxyOptions->InitializeRawProxyOptions(proxyOptions);
 
                     if (aws_mqtt_client_connection_set_http_proxy_options(m_underlyingConnection, &proxyOptions) != 0)
+                    {
+                        return false;
+                    }
+                }
+
+                if (m_socks5ProxyOptions)
+                {
+                    if (aws_mqtt_client_connection_set_socks5_proxy_options(
+                            m_underlyingConnection, m_socks5ProxyOptions->GetUnderlyingHandle()) != AWS_OP_SUCCESS)
                     {
                         return false;
                     }
