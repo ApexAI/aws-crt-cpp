@@ -80,6 +80,27 @@ static int s_TestSocks5ProxyOptionsCreateFromUriAuth(struct aws_allocator *alloc
 }
 AWS_TEST_CASE(Socks5ProxyOptionsCreateFromUriAuth, s_TestSocks5ProxyOptionsCreateFromUriAuth)
 
+static int s_TestSocks5ProxyOptionsCreateFromUriIpv6Literal(struct aws_allocator *allocator, void *)
+{
+    ApiHandle apiHandle(allocator);
+
+    const char *proxyUri = "socks5://[::1]:1080";
+    Uri uri(aws_byte_cursor_from_c_str(proxyUri), allocator);
+    ASSERT_TRUE(uri);
+
+    auto options = Socks5ProxyOptions::CreateFromUri(uri, 1000, allocator);
+    ASSERT_TRUE(options.has_value());
+
+    const aws_socks5_proxy_options *raw = options->GetUnderlyingHandle();
+    ASSERT_NOT_NULL(raw);
+    ASSERT_NOT_NULL(raw->host);
+    ASSERT_STR_EQUALS("::1", aws_string_c_str(raw->host));
+    ASSERT_INT_EQUALS(1080, raw->port);
+
+    return AWS_OP_SUCCESS;
+}
+AWS_TEST_CASE(Socks5ProxyOptionsCreateFromUriIpv6Literal, s_TestSocks5ProxyOptionsCreateFromUriIpv6Literal)
+
 static int s_TestSocks5ProxyOptionsCreateFromUriInvalid(struct aws_allocator *allocator, void *)
 {
     ApiHandle apiHandle(allocator);

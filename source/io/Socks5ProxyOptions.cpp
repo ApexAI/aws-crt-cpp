@@ -9,6 +9,15 @@
 #include <climits>
 #include <utility>
 
+namespace {
+    Aws::Crt::String s_NormalizeProxyHostLiteral(const Aws::Crt::String &host) {
+        if (host.length() >= 2 && host.front() == '[' && host.back() == ']') {
+            return host.substr(1, host.length() - 2);
+        }
+        return host;
+    }
+} // namespace
+
 namespace Aws
 {
     namespace Crt
@@ -343,6 +352,7 @@ namespace Aws
                 }
 
                 String host(reinterpret_cast<const char *>(hostCursor.ptr), hostCursor.len);
+                host = s_NormalizeProxyHostLiteral(host);
 
                 uint32_t port = uri.GetPort();
                 if (port == 0)
